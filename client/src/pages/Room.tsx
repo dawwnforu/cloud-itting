@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../hooks/useSocket';
 import { api } from '../utils/api';
-import { formatTime, extractBvid, QUALITY_OPTIONS } from '../hooks/useBilibiliPlayer';
+import { formatTime, extractBvid } from '../hooks/useBilibiliPlayer';
 import BilibiliPlayer from '../components/BilibiliPlayer';
 import VoiceChat from '../components/VoiceChat';
 import UserList from '../components/UserList';
@@ -41,7 +41,6 @@ export default function Room() {
   const [duration] = useState(0);
   const [syncToken, setSyncToken] = useState(0);
   const [playlist, setPlaylist] = useState<{ videoUrl: string; videoBvid: string; videoTitle: string }[]>([]);
-  const [quality, setQuality] = useState(80);
   const [shuffle, setShuffle] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(-1);
 
@@ -211,10 +210,23 @@ export default function Room() {
     emit('sync-request');
   }, [emit]);
 
-  const copyRoomCode = () => {
-    if (room) {
-      navigator.clipboard.writeText(room.id);
+  const [copied, setCopied] = useState(false);
+
+  const copyRoomCode = async () => {
+    if (!room) return;
+    try {
+      await navigator.clipboard.writeText(room.id);
+    } catch {
+      // Fallback for non-HTTPS / older browsers
+      const el = document.createElement('textarea');
+      el.value = room.id;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
     }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   if (loading) return <div className="loading">加载房间中...</div>;
@@ -233,7 +245,7 @@ export default function Room() {
           <div className="room-info">
             <h3>{room.name}</h3>
             <span className="room-code" onClick={copyRoomCode} title="点击复制房间码">
-              房间码: {room.id} 📋
+              {copied ? '✅ 已复制' : `房间码: ${room.id} 📋`}
             </span>
             <span className="room-host-label">房主: {room.hostName}</span>
           </div>
@@ -245,7 +257,6 @@ export default function Room() {
           isPlaying={isPlaying}
           currentTime={currentTime}
           syncToken={syncToken}
-          quality={quality}
         />
 
         {/* Playback controls — everyone can use */}
@@ -273,20 +284,20 @@ export default function Room() {
             {isHost && <span className="host-badge-ctrl">🎮 房主</span>}
           </div>
 
-          {/* Quality + sync tools */}
+          {/* Tools bar */}
           <div className="player-tools">
-            <div className="quality-select">
-              <span className="tool-label">清晰度</span>
-              {QUALITY_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  className={`btn btn-sm ${quality === opt.value ? 'btn-primary' : 'btn-outline'}`}
-                  onClick={() => setQuality(opt.value)}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+            <button className="btn btn-sm btn-outline" onClick={() => {
+              const el = document.querySelector('.player-wrapper');
+              if (el) {
+                if (document.fullscreenElement) {
+                  document.exitFullscreen();
+                } else {
+                  el.requestFullscreen();
+                }
+              }
+            }}>
+              ⛶ 全屏
+            </button>
             <button className="btn btn-sm btn-outline" onClick={handleResync}>
               🔄 同步
             </button>

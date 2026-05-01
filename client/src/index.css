@@ -188,11 +188,11 @@ input:focus { border-color: var(--accent); }
   background: transparent; cursor: default;
 }
 .player-tools {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  display: flex; align-items: center; gap: 8px;
   margin-top: 8px;
 }
-.quality-select { display: flex; align-items: center; gap: 4px; }
-.tool-label { font-size: 12px; color: var(--text2); margin-right: 4px; }
+.player-wrapper:fullscreen { background: #000; display: flex; align-items: center; justify-content: center; }
+.player-wrapper:fullscreen .bilibili-iframe { width: 100vw; height: 100vh; }
 
 /* === Voice Chat === */
 .voice-chat {

@@ -6,25 +6,24 @@ interface Props {
   isPlaying: boolean;
   currentTime: number;
   syncToken: number;
-  quality: number;
 }
 
-export default function BilibiliPlayer({ bvid, isPlaying, currentTime, syncToken, quality }: Props) {
+export default function BilibiliPlayer({ bvid, isPlaying, currentTime, syncToken }: Props) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const prevKeyRef = useRef('');
 
-  const seekKey = `${bvid}-${syncToken}-${quality}`;
+  const seekKey = `${bvid}-${syncToken}`;
 
   useEffect(() => {
     if (!bvid) return;
     if (seekKey === prevKeyRef.current) return;
     prevKeyRef.current = seekKey;
 
-    const url = getPlayerUrl(bvid, isPlaying, Math.floor(currentTime), quality);
+    const url = getPlayerUrl(bvid, isPlaying, Math.floor(currentTime));
     if (iframeRef.current) {
       iframeRef.current.src = url;
     }
-  }, [seekKey, bvid, isPlaying, currentTime, quality]);
+  }, [seekKey, bvid, isPlaying, currentTime]);
 
   if (!bvid) {
     return (
@@ -38,12 +37,11 @@ export default function BilibiliPlayer({ bvid, isPlaying, currentTime, syncToken
     <div className="player-wrapper">
       <iframe
         ref={iframeRef}
-        src={getPlayerUrl(bvid, false, 0, quality)}
+        src={getPlayerUrl(bvid, false, 0)}
         allow="autoplay"
         allowFullScreen
         className="bilibili-iframe"
       />
-      {/* Overlay prevents accidental clicks from redirecting to B站 */}
       <div className="iframe-overlay" />
       {!isPlaying && (
         <div className="player-pause-overlay">

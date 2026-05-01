@@ -240,7 +240,7 @@ export function setupSocket(httpServer: HttpServer) {
       if (!currentRoom) return;
       const state = roomStates.get(currentRoom);
       if (state) {
-        socket.emit('room-state', state);
+        io.to(currentRoom).emit('room-state', state);
       }
     });
 
