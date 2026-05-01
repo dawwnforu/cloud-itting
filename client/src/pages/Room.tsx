@@ -332,6 +332,13 @@ export default function Room() {
             <span className={`sync-dot ${isPlaying ? 'synced' : ''}`} />
             <span>{isPlaying ? '▶ 播放中' : '⏸ 已暂停'}</span>
           </div>
+
+          <div className="keyboard-hints">
+            <span><kbd>空格</kbd> 播放/暂停</span>
+            <span><kbd>← →</kbd> 快退/快进 5s</span>
+            <span><kbd>Shift+←→</kbd> ±10s</span>
+            <span><kbd>N</kbd> 下一首</span>
+          </div>
         </div>
       </div>
 
