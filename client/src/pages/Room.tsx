@@ -99,12 +99,12 @@ export default function Room() {
     };
   }, [isPlaying, currentDuration, emit]);
 
-  // Periodic drift correction: resync every 30s while playing
+  // Periodic refresh: reload iframe every 25s to prevent B站 30s login popup
   useEffect(() => {
     if (isPlaying) {
       syncIntervalRef.current = setInterval(() => {
         setSyncToken((t) => t + 1);
-      }, 30000);
+      }, 25000);
     } else {
       if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
     }
