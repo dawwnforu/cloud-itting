@@ -1,12 +1,12 @@
-// Fetch video info from B站 public API (no auth needed)
+// Fetch video info via our server proxy (avoids browser CORS block)
 export async function fetchVideoInfo(bvid: string): Promise<{ title: string; duration: number } | null> {
   try {
-    const res = await fetch(`https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`);
+    const res = await fetch(`/api/bilibili/video-info?bvid=${bvid}`);
     const json = await res.json();
     if (json.code === 0 && json.data) {
       return {
         title: json.data.title,
-        duration: json.data.duration, // seconds
+        duration: json.data.duration,
       };
     }
     return null;

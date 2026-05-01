@@ -38,6 +38,21 @@ async function main() {
     res.json({ ok: true });
   });
 
+  // Proxy B站 video info (server-to-server avoids browser CORS)
+  app.get('/api/bilibili/video-info', async (req, res) => {
+    const bvid = req.query.bvid as string;
+    if (!bvid) return res.status(400).json({ error: 'bvid required' });
+    try {
+      const r = await fetch(`https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`, {
+        headers: { 'User-Agent': 'CloudSitting/1.0', 'Referer': 'https://www.bilibili.com' },
+      });
+      const json = await r.json();
+      res.json(json);
+    } catch {
+      res.status(502).json({ error: 'B站 API 请求失败' });
+    }
+  });
+
   // Serve static frontend (after build)
   app.use(express.static(CLIENT_DIR));
 

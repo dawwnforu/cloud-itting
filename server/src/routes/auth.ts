@@ -28,9 +28,11 @@ router.post('/register', async (req: Request, res: Response) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
+    // email has UNIQUE constraint — generate a placeholder since we don't use email
+    const placeholderEmail = `u${Date.now()}@user.local`;
     const result = await pool.query(
       'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id',
-      [username, '', passwordHash]
+      [username, placeholderEmail, passwordHash]
     );
     const userId = result.rows[0].id;
 
