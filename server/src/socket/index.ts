@@ -20,9 +20,15 @@ export function setupSocket(httpServer: HttpServer) {
     },
   });
 
+  const peerMap = new Map<string, string>(); // socket.id → peerId
+
   io.on('connection', (socket: Socket) => {
     let currentRoom: string | null = null;
     let currentUser: { userId: number; username: string } | null = null;
+
+    socket.on('set-peer-id', (data: { peerId: string }) => {
+      peerMap.set(socket.id, data.peerId);
+    });
 
     socket.on('join-room', (data: { roomId: string; userId: number; username: string }) => {
       const { roomId, userId, username } = data;
@@ -111,10 +117,16 @@ export function setupSocket(httpServer: HttpServer) {
     });
 
     socket.on('voice-signal', (data: { to: string; signal: any }) => {
-      io.to(data.to).emit('voice-signal', {
-        from: socket.id,
-        signal: data.signal,
-      });
+      // data.to is a PeerJS peer ID — find the matching socket
+      for (const [sid, pid] of peerMap.entries()) {
+        if (pid === data.to) {
+          io.to(sid).emit('voice-signal', {
+            from: peerMap.get(socket.id) || socket.id,
+            signal: data.signal,
+          });
+          break;
+        }
+      }
     });
 
     socket.on('get-peers', () => {
@@ -124,7 +136,8 @@ export function setupSocket(httpServer: HttpServer) {
       if (sockets) {
         sockets.forEach((sid) => {
           if (sid !== socket.id) {
-            peers.push(sid);
+            const peerId = peerMap.get(sid);
+            if (peerId) peers.push(peerId);
           }
         });
       }
@@ -165,6 +178,7 @@ export function setupSocket(httpServer: HttpServer) {
     });
 
     socket.on('disconnect', () => {
+      peerMap.delete(socket.id);
       if (currentRoom && currentUser) {
         socket.to(currentRoom).emit('user-left', { userId: currentUser.userId, username: currentUser.username });
         socket.leave(currentRoom);

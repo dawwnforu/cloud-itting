@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../hooks/useSocket';
 import { api } from '../utils/api';
-import { formatTime } from '../hooks/useBilibiliPlayer';
+import { formatTime, extractBvid } from '../hooks/useBilibiliPlayer';
 import BilibiliPlayer from '../components/BilibiliPlayer';
 import VoiceChat from '../components/VoiceChat';
 import UserList from '../components/UserList';
@@ -37,11 +37,15 @@ export default function Room() {
   const [loading, setLoading] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [duration] = useState(0);
+  const [syncToken, setSyncToken] = useState(0);
+  const [newVideoUrl, setNewVideoUrl] = useState('');
+  const [switchMsg, setSwitchMsg] = useState('');
 
   const isHost = room ? user?.id === room.hostId : false;
   const syncingRef = useRef(false);
   const clockRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load room info
   useEffect(() => {
@@ -85,11 +89,24 @@ export default function Room() {
     };
   }, [isPlaying]);
 
+  // Periodic drift correction: resync every 30s while playing
+  useEffect(() => {
+    if (isPlaying) {
+      syncIntervalRef.current = setInterval(() => {
+        setSyncToken((t) => t + 1);
+      }, 30000);
+    } else {
+      if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
+    }
+    return () => {
+      if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
+    };
+  }, [isPlaying]);
+
   // Listen for socket sync events
   useEffect(() => {
     const unsubs: (() => void)[] = [];
 
-    // New joiner gets current state
     unsubs.push(
       on('room-state', (state: { isPlaying: boolean; currentTime: number; videoUrl: string; videoBvid: string; videoTitle: string }) => {
         syncingRef.current = true;
@@ -98,6 +115,7 @@ export default function Room() {
         if (room && state.videoBvid !== room.videoBvid) {
           setRoom((prev) => prev ? { ...prev, videoUrl: state.videoUrl, videoBvid: state.videoBvid, videoTitle: state.videoTitle } : prev);
         }
+        setSyncToken((t) => t + 1);
         setTimeout(() => { syncingRef.current = false; }, 500);
       })
     );
@@ -107,6 +125,7 @@ export default function Room() {
         syncingRef.current = true;
         setCurrentTime(data.currentTime);
         setIsPlaying(true);
+        setSyncToken((t) => t + 1);
         setTimeout(() => { syncingRef.current = false; }, 500);
       })
     );
@@ -116,6 +135,7 @@ export default function Room() {
         syncingRef.current = true;
         setCurrentTime(data.currentTime);
         setIsPlaying(false);
+        setSyncToken((t) => t + 1);
         setTimeout(() => { syncingRef.current = false; }, 500);
       })
     );
@@ -124,6 +144,7 @@ export default function Room() {
       on('sync-seek', (data: { currentTime: number }) => {
         syncingRef.current = true;
         setCurrentTime(data.currentTime);
+        setSyncToken((t) => t + 1);
         setTimeout(() => { syncingRef.current = false; }, 500);
       })
     );
@@ -133,6 +154,7 @@ export default function Room() {
         setRoom((prev) => prev ? { ...prev, videoUrl: data.videoUrl, videoBvid: data.videoBvid, videoTitle: data.videoTitle } : prev);
         setCurrentTime(0);
         setIsPlaying(false);
+        setSyncToken((t) => t + 1);
       })
     );
 
@@ -147,26 +169,44 @@ export default function Room() {
     };
   }, [on, room]);
 
-  // === HOST CONTROLS ===
-  const handleHostPlay = useCallback(() => {
-    if (!isHost || syncingRef.current) return;
+  // Everyone can control playback
+  const handlePlay = useCallback(() => {
+    if (syncingRef.current) return;
     const now = currentTime;
     setIsPlaying(true);
+    setSyncToken((t) => t + 1);
     emit('sync-play', { currentTime: now });
-  }, [isHost, currentTime, emit]);
+  }, [currentTime, emit]);
 
-  const handleHostPause = useCallback(() => {
-    if (!isHost || syncingRef.current) return;
+  const handlePause = useCallback(() => {
+    if (syncingRef.current) return;
     const now = currentTime;
     setIsPlaying(false);
+    setSyncToken((t) => t + 1);
     emit('sync-pause', { currentTime: now });
-  }, [isHost, currentTime, emit]);
+  }, [currentTime, emit]);
 
-  const handleHostSeek = useCallback((newTime: number) => {
-    if (!isHost || syncingRef.current) return;
+  const handleSeek = useCallback((newTime: number) => {
+    if (syncingRef.current) return;
     setCurrentTime(newTime);
+    setSyncToken((t) => t + 1);
     emit('sync-seek', { currentTime: newTime });
-  }, [isHost, emit]);
+  }, [emit]);
+
+  const handleSwitchVideo = () => {
+    const bvid = extractBvid(newVideoUrl);
+    if (!bvid) {
+      setSwitchMsg('请输入有效的B站视频链接');
+      return;
+    }
+    if (bvid === room?.videoBvid) {
+      setSwitchMsg('已是当前视频');
+      return;
+    }
+    setSwitchMsg('');
+    emit('sync-video', { videoUrl: newVideoUrl, videoBvid: bvid, videoTitle: '' });
+    setNewVideoUrl('');
+  };
 
   const copyRoomCode = () => {
     if (room) {
@@ -201,45 +241,54 @@ export default function Room() {
           bvid={room.videoBvid}
           isPlaying={isPlaying}
           currentTime={currentTime}
+          syncToken={syncToken}
         />
 
-        {/* Custom playback controls */}
+        {/* Playback controls — everyone can use */}
         <div className="playback-controls">
           <div className="control-bar">
-            {isHost ? (
-              <>
-                <button
-                  className="btn btn-icon"
-                  onClick={isPlaying ? handleHostPause : handleHostPlay}
-                  title={isPlaying ? '暂停' : '播放'}
-                >
-                  {isPlaying ? '⏸' : '▶'}
-                </button>
-                <span className="time-display">
-                  {formatTime(currentTime)}
-                  {duration > 0 && ` / ${formatTime(duration)}`}
-                </span>
-                <input
-                  type="range"
-                  className="seek-bar"
-                  min={0}
-                  max={duration > 0 ? duration : 999}
-                  value={currentTime}
-                  onChange={(e) => handleHostSeek(Number(e.target.value))}
-                />
-                <span className="host-badge-ctrl">🎮 房主控制中</span>
-              </>
-            ) : (
-              <>
-                <span className="time-display">
-                  {formatTime(currentTime)}
-                </span>
-                <div className="sync-status">
-                  <span className={`sync-dot ${isPlaying ? 'synced' : ''}`} />
-                  <span>{isPlaying ? '▶ 同步播放中' : '⏸ 已暂停'}</span>
-                </div>
-              </>
-            )}
+            <button
+              className="btn btn-icon"
+              onClick={isPlaying ? handlePause : handlePlay}
+              title={isPlaying ? '暂停' : '播放'}
+            >
+              {isPlaying ? '⏸' : '▶'}
+            </button>
+            <span className="time-display">
+              {formatTime(currentTime)}
+              {duration > 0 && ` / ${formatTime(duration)}`}
+            </span>
+            <input
+              type="range"
+              className="seek-bar"
+              min={0}
+              max={duration > 0 ? duration : 999}
+              value={currentTime}
+              onChange={(e) => handleSeek(Number(e.target.value))}
+            />
+            {isHost && <span className="host-badge-ctrl">🎮 房主</span>}
+          </div>
+
+          {/* Video switch bar */}
+          <div className="video-switch-bar">
+            <input
+              type="text"
+              className="input"
+              placeholder="粘贴B站视频链接切换视频..."
+              value={newVideoUrl}
+              onChange={(e) => setNewVideoUrl(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSwitchVideo(); }}
+            />
+            <button className="btn btn-sm btn-primary" onClick={handleSwitchVideo}>
+              切换
+            </button>
+            {switchMsg && <span className="switch-msg">{switchMsg}</span>}
+          </div>
+
+          {/* Sync status for non-host */}
+          <div className="sync-status">
+            <span className={`sync-dot ${isPlaying ? 'synced' : ''}`} />
+            <span>{isPlaying ? '▶ 播放中' : '⏸ 已暂停'}</span>
           </div>
         </div>
       </div>

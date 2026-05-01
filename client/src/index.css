@@ -181,6 +181,9 @@ input:focus { border-color: var(--accent); }
 .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #666; }
 .sync-dot.synced { background: #2ecc71; animation: pulse 1.5s infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+.video-switch-bar { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.video-switch-bar .input { flex: 1; padding: 6px 10px; font-size: 13px; }
+.switch-msg { color: var(--accent); font-size: 12px; white-space: nowrap; }
 .room-host-label { color: var(--text2); font-size: 12px; margin-left: 8px; }
 
 /* === Voice Chat === */

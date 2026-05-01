@@ -19,6 +19,23 @@ export default function VoiceChat({ socket, roomId }: Props) {
 
   const { on } = socket;
 
+  const connectToPeer = useCallback((peerId: string, stream: MediaStream, peer: Peer) => {
+    if (connectionsRef.current.has(peerId)) return;
+
+    const call = peer.call(peerId, stream);
+    call.on('stream', () => {
+      setConnectedPeers((prev) => [...prev, peerId]);
+    });
+    call.on('close', () => {
+      connectionsRef.current.delete(peerId);
+      setConnectedPeers((prev) => prev.filter((p) => p !== peerId));
+    });
+    call.on('error', () => {
+      connectionsRef.current.delete(peerId);
+    });
+    connectionsRef.current.set(peerId, call);
+  }, []);
+
   const setupVoice = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -28,14 +45,12 @@ export default function VoiceChat({ socket, roomId }: Props) {
         host: '0.peerjs.com',
         port: 443,
         secure: true,
-        debug: 1,
+        debug: 0,
       });
 
       peer.on('open', (peerId) => {
         setIsConnected(true);
-        // Tell server our peer ID
         socket.emit('set-peer-id', { peerId });
-        // Request peer list
         socket.emit('get-peers');
       });
 
@@ -43,13 +58,21 @@ export default function VoiceChat({ socket, roomId }: Props) {
       peer.on('call', (call) => {
         call.answer(stream);
         call.on('stream', () => {
-          setConnectedPeers((prev) => [...prev, call.peer]);
+          setConnectedPeers((prev) => {
+            if (prev.includes(call.peer)) return prev;
+            return [...prev, call.peer];
+          });
+        });
+        call.on('close', () => {
+          connectionsRef.current.delete(call.peer);
+          setConnectedPeers((prev) => prev.filter((p) => p !== call.peer));
         });
         connectionsRef.current.set(call.peer, call);
       });
 
       peer.on('error', (err) => {
-        setError('语音连接失败: ' + err.message);
+        console.error('PeerJS error:', err);
+        setError('语音连接失败');
       });
 
       peerRef.current = peer;
@@ -58,50 +81,33 @@ export default function VoiceChat({ socket, roomId }: Props) {
     }
   }, [socket]);
 
-  // Handle WebRTC signaling relay
+  // When peers list arrives, connect to new peers
   useEffect(() => {
-    const unsubs: (() => void)[] = [];
+    const unsub = on('peers-list', (peers: string[]) => {
+      const peer = peerRef.current;
+      const stream = localStreamRef.current;
+      if (!peer || !stream) return;
+      const myId = peer.id;
 
-    // Listen for incoming voice signals
-    unsubs.push(
-      on('voice-signal', (data: { from: string; signal: any }) => {
-        if (peerRef.current && !connectionsRef.current.has(data.from)) {
-          const call = peerRef.current.call(data.from, localStreamRef.current!);
-          call.on('stream', () => {
-            setConnectedPeers((prev) => [...prev, data.from]);
-          });
-          connectionsRef.current.set(data.from, call);
+      peers.forEach((peerId) => {
+        if (peerId !== myId) {
+          connectToPeer(peerId, stream, peer);
         }
-      })
-    );
+      });
+    });
 
-    // Get peers list
-    unsubs.push(
-      on('peers-list', (peers: string[]) => {
-        const p = peerRef.current;
-        const stream = localStreamRef.current;
-        if (!p || !stream) return;
-        const myId = p.id;
-
-        peers.forEach((peerId) => {
-          if (peerId !== myId && !connectionsRef.current.has(peerId)) {
-            const call = p.call(peerId, stream);
-            call.on('stream', () => {
-              setConnectedPeers((prev) => [...prev, peerId]);
-            });
-            connectionsRef.current.set(peerId, call);
-
-            // We also need signaling relay for this
-            // Socket.IO doesn't do direct peer-to-peer; we use the voice-signal event
-          }
-        });
-      })
-    );
+    // Re-request peers periodically (new joiners)
+    const interval = setInterval(() => {
+      if (peerRef.current?.id) {
+        socket.emit('get-peers');
+      }
+    }, 5000);
 
     return () => {
-      unsubs.forEach((u) => u());
+      unsub();
+      clearInterval(interval);
     };
-  }, [on]);
+  }, [on, socket, connectToPeer]);
 
   useEffect(() => {
     setupVoice();
