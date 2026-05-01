@@ -1,0 +1,10 @@
+{
+  "name": "cloud-sitting",
+  "private": true,
+  "workspaces": ["client", "server"],
+  "scripts": {
+    "build": "cd client && npx vite build",
+    "start": "npx tsx server/src/index.ts",
+    "dev": "npx tsx server/src/index.ts"
+  }
+}
