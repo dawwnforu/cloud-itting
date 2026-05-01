@@ -6,7 +6,6 @@ export default function Register() {
   const { register, user } = useAuth();
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -21,7 +20,7 @@ export default function Register() {
     setError('');
     setLoading(true);
     try {
-      await register(username, email, password);
+      await register(username, password);
       navigate('/');
     } catch (err: any) {
       setError(err.message);
@@ -45,19 +44,12 @@ export default function Register() {
             autoFocus
           />
           <input
-            type="email"
-            placeholder="邮箱"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-          <input
             type="password"
-            placeholder="密码（至少6位）"
+            placeholder="密码（至少4位）"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            minLength={6}
+            minLength={4}
           />
           <button type="submit" className="btn btn-primary btn-full" disabled={loading}>
             {loading ? '注册中...' : '注册'}

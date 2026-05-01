@@ -28,13 +28,13 @@ async function request(path: string, options: RequestInit = {}) {
 
 export const api = {
   // Auth
-  register: (body: { username: string; email: string; password: string }) =>
+  register: (body: { username: string; password: string }) =>
     request('/auth/register', { method: 'POST', body: JSON.stringify(body) }),
 
-  login: (body: { email: string; password: string }) =>
+  login: (body: { username: string; password: string }) =>
     request('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
 
-  resetPassword: (body: { email: string; newPassword: string }) =>
+  resetPassword: (body: { username: string; newPassword: string }) =>
     request('/auth/reset-password', { method: 'POST', body: JSON.stringify(body) }),
 
   getMe: () => request('/auth/me'),

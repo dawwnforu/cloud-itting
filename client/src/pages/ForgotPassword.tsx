@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../utils/api';
 
 export default function ForgotPassword() {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -15,9 +15,9 @@ export default function ForgotPassword() {
     setSuccess('');
     setLoading(true);
     try {
-      await api.resetPassword({ email, newPassword });
+      await api.resetPassword({ username, newPassword });
       setSuccess('密码重置成功！请返回登录页使用新密码登录。');
-      setEmail('');
+      setUsername('');
       setNewPassword('');
     } catch (err: any) {
       setError(err.message);
@@ -30,25 +30,25 @@ export default function ForgotPassword() {
     <div className="auth-page">
       <div className="auth-card">
         <h1>找回密码</h1>
-        <p className="auth-subtitle">输入注册邮箱，设置新密码</p>
+        <p className="auth-subtitle">输入用户名，设置新密码</p>
         <form onSubmit={handleSubmit}>
           {error && <div className="error-msg">{error}</div>}
           {success && <div className="success-msg">{success}</div>}
           <input
-            type="email"
-            placeholder="注册邮箱"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            type="text"
+            placeholder="用户名"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
             required
             autoFocus
           />
           <input
             type="password"
-            placeholder="新密码（至少6位）"
+            placeholder="新密码（至少4位）"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             required
-            minLength={6}
+            minLength={4}
           />
           <button type="submit" className="btn btn-primary btn-full" disabled={loading}>
             {loading ? '提交中...' : '重置密码'}
