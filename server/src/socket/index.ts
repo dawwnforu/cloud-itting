@@ -346,7 +346,7 @@ export function setupSocket(httpServer: HttpServer) {
 async function persistPlaylist(roomId: string, state: RoomState) {
   const pool = getPool();
   await pool.query(
-    'UPDATE rooms SET playlist = $1 WHERE id = $2',
-    [JSON.stringify(state.playlist), roomId]
+    'UPDATE rooms SET playlist = $1, video_url = $2, video_bvid = $3, video_title = $4 WHERE id = $5',
+    [JSON.stringify(state.playlist), state.videoUrl, state.videoBvid, state.videoTitle, roomId]
   );
 }
