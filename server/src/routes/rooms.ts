@@ -1,11 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { getDb, saveDb } from '../db';
+import { getPool } from '../db';
 import { authenticate } from '../middleware/auth';
 
 const router = Router();
 
-// Generate a 6-digit room code
 function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
@@ -15,8 +14,7 @@ function generateRoomCode(): string {
   return code;
 }
 
-// Create room
-router.post('/', authenticate, (req: Request, res: Response) => {
+router.post('/', authenticate, async (req: Request, res: Response) => {
   try {
     const { name, videoUrl, videoBvid, videoTitle } = req.body;
     const hostId = (req as any).userId;
@@ -25,14 +23,13 @@ router.post('/', authenticate, (req: Request, res: Response) => {
       return res.status(400).json({ error: '请填写房间名和视频链接' });
     }
 
-    const db = getDb();
+    const pool = getPool();
     const roomId = generateRoomCode();
 
-    db.run(
-      'INSERT INTO rooms (id, name, host_id, video_url, video_bvid, video_title) VALUES (?, ?, ?, ?, ?, ?)',
+    await pool.query(
+      'INSERT INTO rooms (id, name, host_id, video_url, video_bvid, video_title) VALUES ($1, $2, $3, $4, $5, $6)',
       [roomId, name, hostId, videoUrl, videoBvid || '', videoTitle || '']
     );
-    saveDb();
 
     res.status(201).json({
       room: {
@@ -50,20 +47,19 @@ router.post('/', authenticate, (req: Request, res: Response) => {
   }
 });
 
-// List active rooms
-router.get('/', (_req: Request, res: Response) => {
+router.get('/', async (_req: Request, res: Response) => {
   try {
-    const db = getDb();
-    const result = db.exec(
+    const pool = getPool();
+    const result = await pool.query(
       'SELECT r.id, r.name, r.video_title, r.created_at, u.username as host_name FROM rooms r JOIN users u ON r.host_id = u.id WHERE r.is_active = 1 ORDER BY r.created_at DESC LIMIT 50'
     );
-    const rooms = result.length > 0 ? result[0].values.map(row => ({
-      id: row[0],
-      name: row[1],
-      videoTitle: row[2],
-      createdAt: row[3],
-      hostName: row[4],
-    })) : [];
+    const rooms = result.rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      videoTitle: row.video_title,
+      createdAt: row.created_at,
+      hostName: row.host_name,
+    }));
     res.json({ rooms });
   } catch (err: any) {
     console.error('获取房间列表失败:', err);
@@ -71,32 +67,31 @@ router.get('/', (_req: Request, res: Response) => {
   }
 });
 
-// Get room by ID
-router.get('/:id', (req: Request, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
   try {
-    const db = getDb();
+    const pool = getPool();
     const roomId = req.params.id;
     console.log('查询房间:', roomId);
-    const result = db.exec(
-      'SELECT r.id, r.name, r.host_id, r.video_url, r.video_bvid, r.video_title, r.is_active, r.created_at, u.username as host_name FROM rooms r JOIN users u ON r.host_id = u.id WHERE r.id = ?',
+    const result = await pool.query(
+      'SELECT r.id, r.name, r.host_id, r.video_url, r.video_bvid, r.video_title, r.is_active, r.created_at, u.username as host_name FROM rooms r JOIN users u ON r.host_id = u.id WHERE r.id = $1',
       [roomId]
     );
-    if (result.length === 0 || result[0].values.length === 0) {
+    if (result.rows.length === 0) {
       console.log('房间未找到:', roomId);
       return res.status(404).json({ error: '房间不存在，请检查房间码是否正确' });
     }
-    const row = result[0].values[0];
+    const row = result.rows[0];
     res.json({
       room: {
-        id: row[0],
-        name: row[1],
-        hostId: row[2],
-        videoUrl: row[3],
-        videoBvid: row[4],
-        videoTitle: row[5],
-        isActive: row[6],
-        createdAt: row[7],
-        hostName: row[8],
+        id: row.id,
+        name: row.name,
+        hostId: row.host_id,
+        videoUrl: row.video_url,
+        videoBvid: row.video_bvid,
+        videoTitle: row.video_title,
+        isActive: row.is_active,
+        createdAt: row.created_at,
+        hostName: row.host_name,
       },
     });
   } catch (err: any) {

@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import http from 'http';
 import path from 'path';
-import { initDb, startAutoSave, stopAutoSave } from './db';
+import { initDb, closeDb } from './db';
 import { setupSocket } from './socket';
 import authRoutes from './routes/auth';
 import roomRoutes from './routes/rooms';
@@ -14,7 +14,6 @@ const CLIENT_DIR = path.join(__dirname, '..', '..', 'client', 'dist');
 async function main() {
   // Initialize database
   await initDb();
-  startAutoSave();
 
   const app = express();
   const server = http.createServer(app);
@@ -55,14 +54,12 @@ async function main() {
   });
 
   // Graceful shutdown
-  process.on('SIGINT', () => {
-    stopAutoSave();
+  const shutdown = async () => {
+    await closeDb();
     process.exit(0);
-  });
-  process.on('SIGTERM', () => {
-    stopAutoSave();
-    process.exit(0);
-  });
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
 main().catch((err) => {

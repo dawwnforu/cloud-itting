@@ -12,7 +12,6 @@ RUN npm install --production=false
 COPY . .
 
 # Create data directory for SQLite
-RUN mkdir -p /app/server/data
 
 # Build frontend
 RUN npm run build

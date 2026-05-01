@@ -1,6 +1,6 @@
 import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
-import { getDb, saveDb } from '../db';
+import { getPool } from '../db';
 
 interface RoomState {
   isPlaying: boolean;
@@ -10,7 +10,6 @@ interface RoomState {
   videoTitle: string;
 }
 
-// Store room states in memory
 const roomStates = new Map<string, RoomState>();
 
 export function setupSocket(httpServer: HttpServer) {
@@ -32,16 +31,13 @@ export function setupSocket(httpServer: HttpServer) {
 
       socket.join(roomId);
 
-      // Send current room state to the new joiner
       const state = roomStates.get(roomId);
       if (state) {
         socket.emit('room-state', state);
       }
 
-      // Notify others
       socket.to(roomId).emit('user-joined', { userId, username });
 
-      // Send user list
       const sockets = io.sockets.adapter.rooms.get(roomId);
       const users: { userId: number; username: string }[] = [];
       if (sockets) {
@@ -55,12 +51,10 @@ export function setupSocket(httpServer: HttpServer) {
       io.to(roomId).emit('user-list', users);
     });
 
-    // Store user info for later retrieval
     socket.on('set-user-info', (data: { userId: number; username: string }) => {
       socket.data.userInfo = data;
     });
 
-    // Video sync events (host → all)
     socket.on('sync-play', (data: { currentTime: number }) => {
       if (!currentRoom) return;
       const state = roomStates.get(currentRoom);
@@ -90,7 +84,7 @@ export function setupSocket(httpServer: HttpServer) {
       socket.to(currentRoom).emit('sync-seek', data);
     });
 
-    socket.on('sync-video', (data: { videoUrl: string; videoBvid: string; videoTitle: string }) => {
+    socket.on('sync-video', async (data: { videoUrl: string; videoBvid: string; videoTitle: string }) => {
       if (!currentRoom) return;
       roomStates.set(currentRoom, {
         isPlaying: false,
@@ -99,12 +93,12 @@ export function setupSocket(httpServer: HttpServer) {
         videoBvid: data.videoBvid,
         videoTitle: data.videoTitle,
       });
-      // Also update in DB
-      const db = getDb();
-      db.run('UPDATE rooms SET video_url = ?, video_bvid = ?, video_title = ? WHERE id = ?', [
-        data.videoUrl, data.videoBvid, data.videoTitle, currentRoom,
-      ]);
-      saveDb();
+
+      const pool = getPool();
+      await pool.query(
+        'UPDATE rooms SET video_url = $1, video_bvid = $2, video_title = $3 WHERE id = $4',
+        [data.videoUrl, data.videoBvid, data.videoTitle, currentRoom]
+      );
       socket.to(currentRoom).emit('sync-video', data);
     });
 
@@ -116,7 +110,6 @@ export function setupSocket(httpServer: HttpServer) {
       }
     });
 
-    // WebRTC voice signaling (relay)
     socket.on('voice-signal', (data: { to: string; signal: any }) => {
       io.to(data.to).emit('voice-signal', {
         from: socket.id,
@@ -124,7 +117,6 @@ export function setupSocket(httpServer: HttpServer) {
       });
     });
 
-    // Get connected peers for WebRTC mesh
     socket.on('get-peers', () => {
       if (!currentRoom) return;
       const sockets = io.sockets.adapter.rooms.get(currentRoom);
@@ -139,17 +131,14 @@ export function setupSocket(httpServer: HttpServer) {
       socket.emit('peers-list', peers);
     });
 
-    // Record playback history
-    socket.on('record-history', () => {
+    socket.on('record-history', async () => {
       if (!currentRoom || !currentUser) return;
       const state = roomStates.get(currentRoom);
-      const db = getDb();
-      db.run(
-        'INSERT INTO playback_history (user_id, room_id, video_url, video_title) VALUES (?, ?, ?, ?)',
+      const pool = getPool();
+      await pool.query(
+        'INSERT INTO playback_history (user_id, room_id, video_url, video_title) VALUES ($1, $2, $3, $4)',
         [currentUser.userId, currentRoom, state?.videoUrl || '', state?.videoTitle || '']
       );
-      saveDb();
-      // Give the new history entry a chance to exist before broadcasting
       setTimeout(() => {
         socket.to(currentRoom!).emit('user-joined', { userId: currentUser!.userId, username: currentUser!.username });
       }, 100);
@@ -160,7 +149,6 @@ export function setupSocket(httpServer: HttpServer) {
         socket.to(currentRoom).emit('user-left', { userId: currentUser.userId, username: currentUser.username });
         socket.leave(currentRoom);
 
-        // Update user list
         const sockets = io.sockets.adapter.rooms.get(currentRoom);
         const users: { userId: number; username: string }[] = [];
         if (sockets) {
