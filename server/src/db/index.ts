@@ -31,8 +31,17 @@ export async function initDb(): Promise<void> {
         video_bvid TEXT,
         video_title TEXT DEFAULT '',
         is_active INTEGER DEFAULT 1,
+        playlist JSONB DEFAULT '[]',
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
+    `);
+
+    // Migration: add playlist column if table already existed
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE rooms ADD COLUMN playlist JSONB DEFAULT '[]';
+      EXCEPTION WHEN duplicate_column THEN NULL;
+      END $$;
     `);
 
     await client.query(`

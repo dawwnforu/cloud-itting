@@ -7,6 +7,7 @@ import { formatTime, extractBvid } from '../hooks/useBilibiliPlayer';
 import BilibiliPlayer from '../components/BilibiliPlayer';
 import VoiceChat from '../components/VoiceChat';
 import UserList from '../components/UserList';
+import Playlist from '../components/Playlist';
 
 interface RoomData {
   id: string;
@@ -41,6 +42,9 @@ export default function Room() {
   const [syncToken, setSyncToken] = useState(0);
   const [newVideoUrl, setNewVideoUrl] = useState('');
   const [switchMsg, setSwitchMsg] = useState('');
+  const [playlist, setPlaylist] = useState<{ videoUrl: string; videoBvid: string; videoTitle: string }[]>([]);
+  const [shuffle, setShuffle] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(-1);
 
   const isHost = room ? user?.id === room.hostId : false;
   const syncingRef = useRef(false);
@@ -108,13 +112,16 @@ export default function Room() {
     const unsubs: (() => void)[] = [];
 
     unsubs.push(
-      on('room-state', (state: { isPlaying: boolean; currentTime: number; videoUrl: string; videoBvid: string; videoTitle: string }) => {
+      on('room-state', (state: { isPlaying: boolean; currentTime: number; videoUrl: string; videoBvid: string; videoTitle: string; playlist?: any[]; shuffle?: boolean; currentIndex?: number }) => {
         syncingRef.current = true;
         setCurrentTime(state.currentTime);
         setIsPlaying(state.isPlaying);
         if (room && state.videoBvid !== room.videoBvid) {
           setRoom((prev) => prev ? { ...prev, videoUrl: state.videoUrl, videoBvid: state.videoBvid, videoTitle: state.videoTitle } : prev);
         }
+        if (state.playlist) setPlaylist(state.playlist);
+        if (state.shuffle !== undefined) setShuffle(state.shuffle);
+        if (state.currentIndex !== undefined) setCurrentIndex(state.currentIndex);
         setSyncToken((t) => t + 1);
         setTimeout(() => { syncingRef.current = false; }, 500);
       })
@@ -150,17 +157,25 @@ export default function Room() {
     );
 
     unsubs.push(
-      on('sync-video', (data: { videoUrl: string; videoBvid: string; videoTitle: string }) => {
+      on('sync-video', (data: { videoUrl: string; videoBvid: string; videoTitle: string; playlistIndex?: number }) => {
         setRoom((prev) => prev ? { ...prev, videoUrl: data.videoUrl, videoBvid: data.videoBvid, videoTitle: data.videoTitle } : prev);
         setCurrentTime(0);
         setIsPlaying(false);
         setSyncToken((t) => t + 1);
+        if (data.playlistIndex !== undefined) setCurrentIndex(data.playlistIndex);
       })
     );
 
     unsubs.push(
       on('user-list', (userList: UserInfo[]) => {
         setUsers(userList);
+      }));
+
+    unsubs.push(
+      on('playlist-update', (data: { playlist: typeof playlist; shuffle: boolean; currentIndex: number }) => {
+        setPlaylist(data.playlist);
+        setShuffle(data.shuffle);
+        setCurrentIndex(data.currentIndex);
       })
     );
 
@@ -300,6 +315,12 @@ export default function Room() {
 
       <div className="room-sidebar">
         <UserList users={users} hostId={room.hostId} />
+        <Playlist
+          socket={socket}
+          playlist={playlist}
+          shuffle={shuffle}
+          currentIndex={currentIndex}
+        />
       </div>
     </div>
   );

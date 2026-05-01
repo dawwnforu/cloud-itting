@@ -2,15 +2,37 @@ import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import { getPool } from '../db';
 
+interface PlaylistItem {
+  videoUrl: string;
+  videoBvid: string;
+  videoTitle: string;
+}
+
 interface RoomState {
   isPlaying: boolean;
   currentTime: number;
   videoUrl: string;
   videoBvid: string;
   videoTitle: string;
+  playlist: PlaylistItem[];
+  shuffle: boolean;
+  currentIndex: number;
 }
 
 const roomStates = new Map<string, RoomState>();
+
+function defaultRoomState(): RoomState {
+  return {
+    isPlaying: false,
+    currentTime: 0,
+    videoUrl: '',
+    videoBvid: '',
+    videoTitle: '',
+    playlist: [],
+    shuffle: false,
+    currentIndex: -1,
+  };
+}
 
 export function setupSocket(httpServer: HttpServer) {
   const io = new Server(httpServer, {
@@ -20,7 +42,7 @@ export function setupSocket(httpServer: HttpServer) {
     },
   });
 
-  const peerMap = new Map<string, string>(); // socket.id → peerId
+  const peerMap = new Map<string, string>();
 
   io.on('connection', (socket: Socket) => {
     let currentRoom: string | null = null;
@@ -37,10 +59,12 @@ export function setupSocket(httpServer: HttpServer) {
 
       socket.join(roomId);
 
-      const state = roomStates.get(roomId);
-      if (state) {
-        socket.emit('room-state', state);
+      // Initialize room state if needed
+      if (!roomStates.has(roomId)) {
+        roomStates.set(roomId, defaultRoomState());
       }
+      const state = roomStates.get(roomId)!;
+      socket.emit('room-state', state);
 
       socket.to(roomId).emit('user-joined', { userId, username });
 
@@ -90,14 +114,18 @@ export function setupSocket(httpServer: HttpServer) {
       socket.to(currentRoom).emit('sync-seek', data);
     });
 
-    socket.on('sync-video', async (data: { videoUrl: string; videoBvid: string; videoTitle: string }) => {
+    socket.on('sync-video', async (data: { videoUrl: string; videoBvid: string; videoTitle: string; playlistIndex?: number }) => {
       if (!currentRoom) return;
+      const existing = roomStates.get(currentRoom);
       roomStates.set(currentRoom, {
         isPlaying: false,
         currentTime: 0,
         videoUrl: data.videoUrl,
         videoBvid: data.videoBvid,
         videoTitle: data.videoTitle,
+        playlist: existing?.playlist || [],
+        shuffle: existing?.shuffle || false,
+        currentIndex: data.playlistIndex ?? existing?.currentIndex ?? -1,
       });
 
       const pool = getPool();
@@ -106,6 +134,106 @@ export function setupSocket(httpServer: HttpServer) {
         [data.videoUrl, data.videoBvid, data.videoTitle, currentRoom]
       );
       socket.to(currentRoom).emit('sync-video', data);
+    });
+
+    // === Playlist events ===
+
+    socket.on('add-to-playlist', async (data: { item: PlaylistItem }) => {
+      if (!currentRoom) return;
+      const state = roomStates.get(currentRoom);
+      if (!state) return;
+      state.playlist.push(data.item);
+
+      // If this is the first item and nothing is playing, auto-select it
+      if (state.playlist.length === 1 && !state.videoBvid) {
+        state.currentIndex = 0;
+        state.videoUrl = data.item.videoUrl;
+        state.videoBvid = data.item.videoBvid;
+        state.videoTitle = data.item.videoTitle;
+      }
+
+      await persistPlaylist(currentRoom, state);
+      io.to(currentRoom).emit('playlist-update', { playlist: state.playlist, shuffle: state.shuffle, currentIndex: state.currentIndex });
+
+      // If first item was auto-selected, also sync video
+      if (state.playlist.length === 1 && state.videoBvid === data.item.videoBvid) {
+        io.to(currentRoom).emit('sync-video', { videoUrl: state.videoUrl, videoBvid: state.videoBvid, videoTitle: state.videoTitle, playlistIndex: 0 });
+      }
+    });
+
+    socket.on('remove-from-playlist', async (data: { index: number }) => {
+      if (!currentRoom) return;
+      const state = roomStates.get(currentRoom);
+      if (!state) return;
+      state.playlist.splice(data.index, 1);
+
+      // Adjust currentIndex
+      if (data.index === state.currentIndex) {
+        state.currentIndex = -1;
+      } else if (data.index < state.currentIndex) {
+        state.currentIndex--;
+      }
+
+      await persistPlaylist(currentRoom, state);
+      io.to(currentRoom).emit('playlist-update', { playlist: state.playlist, shuffle: state.shuffle, currentIndex: state.currentIndex });
+    });
+
+    socket.on('play-from-list', async (data: { index: number }) => {
+      if (!currentRoom) return;
+      const state = roomStates.get(currentRoom);
+      if (!state) return;
+      if (data.index < 0 || data.index >= state.playlist.length) return;
+
+      const item = state.playlist[data.index];
+      state.currentIndex = data.index;
+      state.videoUrl = item.videoUrl;
+      state.videoBvid = item.videoBvid;
+      state.videoTitle = item.videoTitle;
+      state.isPlaying = false;
+      state.currentTime = 0;
+
+      await persistPlaylist(currentRoom, state);
+      io.to(currentRoom).emit('sync-video', { videoUrl: item.videoUrl, videoBvid: item.videoBvid, videoTitle: item.videoTitle, playlistIndex: data.index });
+    });
+
+    socket.on('play-next', async () => {
+      if (!currentRoom) return;
+      const state = roomStates.get(currentRoom);
+      if (!state) return;
+      if (state.playlist.length === 0) return;
+
+      let nextIndex: number;
+      if (state.shuffle) {
+        // Random excluding current
+        let idx: number;
+        do {
+          idx = Math.floor(Math.random() * state.playlist.length);
+        } while (idx === state.currentIndex && state.playlist.length > 1);
+        nextIndex = idx;
+      } else {
+        nextIndex = (state.currentIndex + 1) % state.playlist.length;
+      }
+
+      const item = state.playlist[nextIndex];
+      state.currentIndex = nextIndex;
+      state.videoUrl = item.videoUrl;
+      state.videoBvid = item.videoBvid;
+      state.videoTitle = item.videoTitle;
+      state.isPlaying = false;
+      state.currentTime = 0;
+
+      await persistPlaylist(currentRoom, state);
+      io.to(currentRoom).emit('sync-video', { videoUrl: item.videoUrl, videoBvid: item.videoBvid, videoTitle: item.videoTitle, playlistIndex: nextIndex });
+    });
+
+    socket.on('set-shuffle', async (data: { shuffle: boolean }) => {
+      if (!currentRoom) return;
+      const state = roomStates.get(currentRoom);
+      if (!state) return;
+      state.shuffle = data.shuffle;
+
+      await persistPlaylist(currentRoom, state);
+      io.to(currentRoom).emit('playlist-update', { playlist: state.playlist, shuffle: state.shuffle, currentIndex: state.currentIndex });
     });
 
     socket.on('sync-request', () => {
@@ -117,7 +245,6 @@ export function setupSocket(httpServer: HttpServer) {
     });
 
     socket.on('voice-signal', (data: { to: string; signal: any }) => {
-      // data.to is a PeerJS peer ID — find the matching socket
       for (const [sid, pid] of peerMap.entries()) {
         if (pid === data.to) {
           io.to(sid).emit('voice-signal', {
@@ -199,4 +326,12 @@ export function setupSocket(httpServer: HttpServer) {
   });
 
   return io;
+}
+
+async function persistPlaylist(roomId: string, state: RoomState) {
+  const pool = getPool();
+  await pool.query(
+    'UPDATE rooms SET playlist = $1 WHERE id = $2',
+    [JSON.stringify(state.playlist), roomId]
+  );
 }
