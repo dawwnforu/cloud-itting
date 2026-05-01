@@ -8,6 +8,9 @@ import authRoutes from './routes/auth';
 import roomRoutes from './routes/rooms';
 import historyRoutes from './routes/history';
 
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { ExpressPeerServer } = require('peer');
+
 const PORT = process.env.PORT || 3001;
 const CLIENT_DIR = path.join(__dirname, '..', '..', 'client', 'dist');
 
@@ -53,11 +56,15 @@ async function main() {
     }
   });
 
+  // PeerJS signaling server (self-hosted, avoids blocked 0.peerjs.com)
+  const peerServer = ExpressPeerServer(server, { debug: false });
+  app.use('/peerjs', peerServer);
+
   // Serve static frontend (after build)
   app.use(express.static(CLIENT_DIR));
 
   // SPA fallback — all non-API routes to index.html
-  app.get(/^(?!\/api\/|\/socket\.io\/).*/, (_req, res) => {
+  app.get(/^(?!\/api\/|\/peerjs\/|\/socket\.io\/).*/, (_req, res) => {
     res.sendFile(path.join(CLIENT_DIR, 'index.html'));
   });
 

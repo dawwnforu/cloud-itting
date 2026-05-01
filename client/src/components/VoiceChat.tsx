@@ -42,9 +42,10 @@ export default function VoiceChat({ socket, roomId }: Props) {
       localStreamRef.current = stream;
 
       const peer = new Peer({
-        host: '0.peerjs.com',
-        port: 443,
-        secure: true,
+        host: window.location.hostname,
+        path: '/peerjs',
+        port: window.location.port ? Number(window.location.port) : (window.location.protocol === 'https:' ? 443 : 80),
+        secure: window.location.protocol === 'https:',
         debug: 0,
       });
 
