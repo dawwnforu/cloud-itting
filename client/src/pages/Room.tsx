@@ -204,6 +204,11 @@ export default function Room() {
       return;
     }
     setSwitchMsg('');
+    // Update local state immediately (like play/pause handlers do)
+    setRoom((prev) => prev ? { ...prev, videoUrl: newVideoUrl, videoBvid: bvid, videoTitle: '' } : prev);
+    setCurrentTime(0);
+    setIsPlaying(false);
+    setSyncToken((t) => t + 1);
     emit('sync-video', { videoUrl: newVideoUrl, videoBvid: bvid, videoTitle: '' });
     setNewVideoUrl('');
   };
