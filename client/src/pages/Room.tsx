@@ -314,7 +314,7 @@ export default function Room() {
               type="range"
               className="seek-bar"
               min={0}
-              max={Math.max(currentTime + 120, 600)}
+              max={currentDuration > 0 ? currentDuration : Math.max(currentTime + 120, 600)}
               value={currentTime}
               onChange={(e) => handleSeek(Number(e.target.value))}
             />

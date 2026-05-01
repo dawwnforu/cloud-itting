@@ -53,16 +53,30 @@ export function setupSocket(httpServer: HttpServer) {
       peerMap.set(socket.id, data.peerId);
     });
 
-    socket.on('join-room', (data: { roomId: string; userId: number; username: string }) => {
+    socket.on('join-room', async (data: { roomId: string; userId: number; username: string }) => {
       const { roomId, userId, username } = data;
       currentRoom = roomId;
       currentUser = { userId, username };
 
       socket.join(roomId);
 
-      // Initialize room state if needed
+      // Initialize room state if needed — load from DB
       if (!roomStates.has(roomId)) {
-        roomStates.set(roomId, defaultRoomState());
+        const pool = getPool();
+        const dbRoom = await pool.query('SELECT video_url, video_bvid, video_title, playlist FROM rooms WHERE id = $1', [roomId]);
+        if (dbRoom.rows.length > 0) {
+          const r = dbRoom.rows[0];
+          const existing = roomStates.get(roomId) || defaultRoomState();
+          existing.videoUrl = r.video_url || '';
+          existing.videoBvid = r.video_bvid || '';
+          existing.videoTitle = r.video_title || '';
+          try {
+            existing.playlist = typeof r.playlist === 'string' ? JSON.parse(r.playlist) : (r.playlist || []);
+          } catch { existing.playlist = []; }
+          roomStates.set(roomId, existing);
+        } else {
+          roomStates.set(roomId, defaultRoomState());
+        }
       }
       const state = roomStates.get(roomId)!;
       socket.emit('room-state', state);
