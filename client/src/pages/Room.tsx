@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../hooks/useSocket';
 import { api } from '../utils/api';
-import { formatTime, extractBvid } from '../hooks/useBilibiliPlayer';
+import { formatTime, extractBvid, QUALITY_OPTIONS } from '../hooks/useBilibiliPlayer';
 import BilibiliPlayer from '../components/BilibiliPlayer';
 import VoiceChat from '../components/VoiceChat';
 import UserList from '../components/UserList';
@@ -40,9 +40,8 @@ export default function Room() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration] = useState(0);
   const [syncToken, setSyncToken] = useState(0);
-  const [newVideoUrl, setNewVideoUrl] = useState('');
-  const [switchMsg, setSwitchMsg] = useState('');
   const [playlist, setPlaylist] = useState<{ videoUrl: string; videoBvid: string; videoTitle: string }[]>([]);
+  const [quality, setQuality] = useState(80);
   const [shuffle, setShuffle] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(-1);
 
@@ -208,25 +207,9 @@ export default function Room() {
     emit('sync-seek', { currentTime: newTime });
   }, [emit]);
 
-  const handleSwitchVideo = () => {
-    const bvid = extractBvid(newVideoUrl);
-    if (!bvid) {
-      setSwitchMsg('请输入有效的B站视频链接');
-      return;
-    }
-    if (bvid === room?.videoBvid) {
-      setSwitchMsg('已是当前视频');
-      return;
-    }
-    setSwitchMsg('');
-    // Update local state immediately (like play/pause handlers do)
-    setRoom((prev) => prev ? { ...prev, videoUrl: newVideoUrl, videoBvid: bvid, videoTitle: '' } : prev);
-    setCurrentTime(0);
-    setIsPlaying(false);
-    setSyncToken((t) => t + 1);
-    emit('sync-video', { videoUrl: newVideoUrl, videoBvid: bvid, videoTitle: '' });
-    setNewVideoUrl('');
-  };
+  const handleResync = useCallback(() => {
+    emit('sync-request');
+  }, [emit]);
 
   const copyRoomCode = () => {
     if (room) {
@@ -262,6 +245,7 @@ export default function Room() {
           isPlaying={isPlaying}
           currentTime={currentTime}
           syncToken={syncToken}
+          quality={quality}
         />
 
         {/* Playback controls — everyone can use */}
@@ -289,23 +273,25 @@ export default function Room() {
             {isHost && <span className="host-badge-ctrl">🎮 房主</span>}
           </div>
 
-          {/* Video switch bar */}
-          <div className="video-switch-bar">
-            <input
-              type="text"
-              className="input"
-              placeholder="粘贴B站视频链接切换视频..."
-              value={newVideoUrl}
-              onChange={(e) => setNewVideoUrl(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleSwitchVideo(); }}
-            />
-            <button className="btn btn-sm btn-primary" onClick={handleSwitchVideo}>
-              切换
+          {/* Quality + sync tools */}
+          <div className="player-tools">
+            <div className="quality-select">
+              <span className="tool-label">清晰度</span>
+              {QUALITY_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  className={`btn btn-sm ${quality === opt.value ? 'btn-primary' : 'btn-outline'}`}
+                  onClick={() => setQuality(opt.value)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <button className="btn btn-sm btn-outline" onClick={handleResync}>
+              🔄 同步
             </button>
-            {switchMsg && <span className="switch-msg">{switchMsg}</span>}
           </div>
 
-          {/* Sync status for non-host */}
           <div className="sync-status">
             <span className={`sync-dot ${isPlaying ? 'synced' : ''}`} />
             <span>{isPlaying ? '▶ 播放中' : '⏸ 已暂停'}</span>

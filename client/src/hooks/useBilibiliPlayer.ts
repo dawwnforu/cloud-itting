@@ -6,11 +6,20 @@
 //   t=123     - 起始时间(秒)
 //   high_quality=1 - 高清
 
-export function getPlayerUrl(bvid: string, autoplay: boolean, time: number): string {
+// B站 quality codes: 16=360p, 32=480p, 64=720p, 80=1080p, 112=1080p+/4K
+export const QUALITY_OPTIONS = [
+  { label: '360P', value: 16 },
+  { label: '480P', value: 32 },
+  { label: '720P', value: 64 },
+  { label: '1080P', value: 80 },
+  { label: '1080P+', value: 112 },
+];
+
+export function getPlayerUrl(bvid: string, autoplay: boolean, time: number, quality: number = 80): string {
   const params = new URLSearchParams({
     bvid,
     page: '1',
-    high_quality: '1',
+    quality: String(quality),
     autoplay: autoplay ? '1' : '0',
   });
   if (time > 0) {

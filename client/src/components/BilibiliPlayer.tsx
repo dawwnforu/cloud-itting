@@ -5,27 +5,26 @@ interface Props {
   bvid: string;
   isPlaying: boolean;
   currentTime: number;
-  syncToken: number; // changes on explicit play/pause/seek/video-change
+  syncToken: number;
+  quality: number;
 }
 
-export default function BilibiliPlayer({ bvid, isPlaying, currentTime, syncToken }: Props) {
+export default function BilibiliPlayer({ bvid, isPlaying, currentTime, syncToken, quality }: Props) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const prevKeyRef = useRef('');
 
-  // Only reload iframe on explicit sync events (syncToken changes) or video change
-  // NOT on every clock tick — that causes jitter
-  const seekKey = `${bvid}-${syncToken}`;
+  const seekKey = `${bvid}-${syncToken}-${quality}`;
 
   useEffect(() => {
     if (!bvid) return;
     if (seekKey === prevKeyRef.current) return;
     prevKeyRef.current = seekKey;
 
-    const url = getPlayerUrl(bvid, isPlaying, Math.floor(currentTime));
+    const url = getPlayerUrl(bvid, isPlaying, Math.floor(currentTime), quality);
     if (iframeRef.current) {
       iframeRef.current.src = url;
     }
-  }, [seekKey, bvid, isPlaying, currentTime]);
+  }, [seekKey, bvid, isPlaying, currentTime, quality]);
 
   if (!bvid) {
     return (
@@ -39,11 +38,13 @@ export default function BilibiliPlayer({ bvid, isPlaying, currentTime, syncToken
     <div className="player-wrapper">
       <iframe
         ref={iframeRef}
-        src={getPlayerUrl(bvid, false, 0)}
+        src={getPlayerUrl(bvid, false, 0, quality)}
         allow="autoplay"
         allowFullScreen
         className="bilibili-iframe"
       />
+      {/* Overlay prevents accidental clicks from redirecting to B站 */}
+      <div className="iframe-overlay" />
       {!isPlaying && (
         <div className="player-pause-overlay">
           <span>⏸ 已暂停</span>
