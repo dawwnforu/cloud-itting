@@ -42,7 +42,6 @@ export default function BilibiliPlayer({ bvid, isPlaying, currentTime, syncToken
         allowFullScreen
         className="bilibili-iframe"
       />
-      <div className="iframe-overlay" />
       {!isPlaying && (
         <div className="player-pause-overlay">
           <span>⏸ 已暂停</span>

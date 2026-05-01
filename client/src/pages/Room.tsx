@@ -38,7 +38,6 @@ export default function Room() {
   const [loading, setLoading] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration] = useState(0);
   const [syncToken, setSyncToken] = useState(0);
   const [playlist, setPlaylist] = useState<{ videoUrl: string; videoBvid: string; videoTitle: string }[]>([]);
   const [shuffle, setShuffle] = useState(false);
@@ -206,6 +205,35 @@ export default function Room() {
     emit('sync-seek', { currentTime: newTime });
   }, [emit]);
 
+  // Keyboard controls
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      switch (e.code) {
+        case 'Space':
+          e.preventDefault();
+          if (isPlaying) handlePause(); else handlePlay();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          handleSeek(Math.max(0, currentTime - (e.shiftKey ? 10 : 5)));
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          handleSeek(currentTime + (e.shiftKey ? 10 : 5));
+          break;
+        case 'KeyN':
+          if (!e.ctrlKey && !e.metaKey) {
+            emit('play-next');
+          }
+          break;
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [isPlaying, currentTime, handlePlay, handlePause, handleSeek, emit]);
+
   const handleResync = useCallback(() => {
     emit('sync-request');
   }, [emit]);
@@ -269,15 +297,12 @@ export default function Room() {
             >
               {isPlaying ? '⏸' : '▶'}
             </button>
-            <span className="time-display">
-              {formatTime(currentTime)}
-              {duration > 0 && ` / ${formatTime(duration)}`}
-            </span>
+            <span className="time-display">{formatTime(currentTime)}</span>
             <input
               type="range"
               className="seek-bar"
               min={0}
-              max={duration > 0 ? duration : 999}
+              max={Math.max(currentTime + 120, 600)}
               value={currentTime}
               onChange={(e) => handleSeek(Number(e.target.value))}
             />
