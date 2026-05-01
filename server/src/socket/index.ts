@@ -6,6 +6,7 @@ interface PlaylistItem {
   videoUrl: string;
   videoBvid: string;
   videoTitle: string;
+  duration: number;
 }
 
 interface RoomState {

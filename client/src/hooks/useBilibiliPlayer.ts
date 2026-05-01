@@ -1,3 +1,20 @@
+// Fetch video info from B站 public API (no auth needed)
+export async function fetchVideoInfo(bvid: string): Promise<{ title: string; duration: number } | null> {
+  try {
+    const res = await fetch(`https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`);
+    const json = await res.json();
+    if (json.code === 0 && json.data) {
+      return {
+        title: json.data.title,
+        duration: json.data.duration, // seconds
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function getPlayerUrl(bvid: string, autoplay: boolean, time: number): string {
   const params = new URLSearchParams({
     bvid,

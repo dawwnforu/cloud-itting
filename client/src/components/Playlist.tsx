@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
-import { extractBvid } from '../hooks/useBilibiliPlayer';
+import { useState } from 'react';
+import { extractBvid, fetchVideoInfo } from '../hooks/useBilibiliPlayer';
 
 interface PlaylistItem {
   videoUrl: string;
   videoBvid: string;
   videoTitle: string;
+  duration: number;
 }
 
 interface Props {
@@ -15,14 +16,26 @@ interface Props {
 }
 
 export default function Playlist({ socket, playlist, shuffle, currentIndex }: Props) {
-  const { emit, on } = socket;
+  const { emit } = socket;
   const [url, setUrl] = useState('');
+  const [adding, setAdding] = useState(false);
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     const bvid = extractBvid(url.trim());
-    if (!bvid) return;
-    emit('add-to-playlist', { item: { videoUrl: url.trim(), videoBvid: bvid, videoTitle: '' } });
+    if (!bvid || adding) return;
+    setAdding(true);
+
+    const info = await fetchVideoInfo(bvid);
+    emit('add-to-playlist', {
+      item: {
+        videoUrl: url.trim(),
+        videoBvid: bvid,
+        videoTitle: info?.title || '',
+        duration: info?.duration || 0,
+      },
+    });
     setUrl('');
+    setAdding(false);
   };
 
   const handleRemove = (index: number) => {
@@ -39,6 +52,13 @@ export default function Playlist({ socket, playlist, shuffle, currentIndex }: Pr
 
   const handleToggleShuffle = () => {
     emit('set-shuffle', { shuffle: !shuffle });
+  };
+
+  const formatDur = (s: number) => {
+    if (!s) return '';
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, '0')}`;
   };
 
   return (
@@ -67,6 +87,7 @@ export default function Playlist({ socket, playlist, shuffle, currentIndex }: Pr
             >
               <span className="playlist-index">{idx + 1}</span>
               <span className="playlist-title">{item.videoTitle || item.videoBvid}</span>
+              {item.duration > 0 && <span className="playlist-dur">{formatDur(item.duration)}</span>}
               <button
                 className="btn btn-sm btn-icon playlist-remove"
                 onClick={(e) => { e.stopPropagation(); handleRemove(idx); }}
@@ -88,8 +109,8 @@ export default function Playlist({ socket, playlist, shuffle, currentIndex }: Pr
           onChange={(e) => setUrl(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
         />
-        <button className="btn btn-sm btn-primary" onClick={handleAdd}>
-          添加
+        <button className="btn btn-sm btn-primary" onClick={handleAdd} disabled={adding}>
+          {adding ? '...' : '添加'}
         </button>
         <button
           className="btn btn-sm btn-outline"

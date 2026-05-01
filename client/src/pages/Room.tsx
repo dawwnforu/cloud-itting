@@ -39,7 +39,7 @@ export default function Room() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [syncToken, setSyncToken] = useState(0);
-  const [playlist, setPlaylist] = useState<{ videoUrl: string; videoBvid: string; videoTitle: string }[]>([]);
+  const [playlist, setPlaylist] = useState<{ videoUrl: string; videoBvid: string; videoTitle: string; duration: number }[]>([]);
   const [shuffle, setShuffle] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(-1);
 
@@ -76,11 +76,20 @@ export default function Room() {
     };
   }, [room, user, emit]);
 
-  // Virtual clock: ticks every second when playing
+  const currentDuration = playlist[currentIndex]?.duration || 0;
+
+  // Virtual clock: ticks every second when playing, auto-advance at end
   useEffect(() => {
     if (isPlaying) {
       clockRef.current = setInterval(() => {
-        setCurrentTime((t) => t + 1);
+        setCurrentTime((t) => {
+          const next = t + 1;
+          // Auto-advance when reaching end (2s buffer)
+          if (currentDuration > 0 && next >= currentDuration - 2) {
+            emit('play-next');
+          }
+          return next;
+        });
       }, 1000);
     } else {
       if (clockRef.current) clearInterval(clockRef.current);
@@ -88,7 +97,7 @@ export default function Room() {
     return () => {
       if (clockRef.current) clearInterval(clockRef.current);
     };
-  }, [isPlaying]);
+  }, [isPlaying, currentDuration, emit]);
 
   // Periodic drift correction: resync every 30s while playing
   useEffect(() => {
@@ -297,7 +306,10 @@ export default function Room() {
             >
               {isPlaying ? '⏸' : '▶'}
             </button>
-            <span className="time-display">{formatTime(currentTime)}</span>
+            <span className="time-display">
+              {formatTime(currentTime)}
+              {currentDuration > 0 && ` / ${formatTime(currentDuration)}`}
+            </span>
             <input
               type="range"
               className="seek-bar"
