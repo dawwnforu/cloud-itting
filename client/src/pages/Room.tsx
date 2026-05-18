@@ -5,6 +5,8 @@ import { useSocket } from '../hooks/useSocket';
 import { api } from '../utils/api';
 import { formatTime, extractBvid } from '../hooks/useBilibiliPlayer';
 import BilibiliPlayer from '../components/BilibiliPlayer';
+import DashPlayer from '../components/DashPlayer';
+import BilibiliAuth from '../components/BilibiliAuth';
 import VoiceChat from '../components/VoiceChat';
 import UserList from '../components/UserList';
 import Playlist from '../components/Playlist';
@@ -42,6 +44,7 @@ export default function Room() {
   const [playlist, setPlaylist] = useState<{ videoUrl: string; videoBvid: string; videoTitle: string; duration: number }[]>([]);
   const [shuffle, setShuffle] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(-1);
+  const [bilibiliAuthed, setBilibiliAuthed] = useState(false);
 
   const isHost = room ? user?.id === room.hostId : false;
   const syncingRef = useRef(false);
@@ -61,6 +64,15 @@ export default function Room() {
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
+  }, [roomId]);
+
+  // Check B站 session status
+  useEffect(() => {
+    if (!roomId) return;
+    fetch(`/api/bilibili/session/${roomId}`)
+      .then(r => r.json())
+      .then(data => { if (data.authed) setBilibiliAuthed(true); })
+      .catch(() => {});
   }, [roomId]);
 
   // Join socket room on mount
@@ -99,12 +111,12 @@ export default function Room() {
     };
   }, [isPlaying, currentDuration, emit]);
 
-  // Periodic refresh: reload iframe every 25s to prevent B站 30s login popup
+  // Periodic drift correction: resync every 30s while playing
   useEffect(() => {
     if (isPlaying) {
       syncIntervalRef.current = setInterval(() => {
         setSyncToken((t) => t + 1);
-      }, 25000);
+      }, 30000);
     } else {
       if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
     }
@@ -112,6 +124,13 @@ export default function Room() {
       if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
     };
   }, [isPlaying]);
+
+  // Helper: update video info if we receive a new bvid from sync events
+  const applyVideoSync = useCallback((videoBvid?: string, videoUrl?: string, videoTitle?: string) => {
+    if (videoBvid && room && videoBvid !== room.videoBvid) {
+      setRoom((prev) => prev ? { ...prev, videoUrl: videoUrl || '', videoBvid, videoTitle: videoTitle || '' } : prev);
+    }
+  }, [room]);
 
   // Listen for socket sync events
   useEffect(() => {
@@ -122,7 +141,7 @@ export default function Room() {
         syncingRef.current = true;
         setCurrentTime(state.currentTime);
         setIsPlaying(state.isPlaying);
-        if (room && state.videoBvid !== room.videoBvid) {
+        if (room && state.videoBvid && state.videoBvid !== room.videoBvid) {
           setRoom((prev) => prev ? { ...prev, videoUrl: state.videoUrl, videoBvid: state.videoBvid, videoTitle: state.videoTitle } : prev);
         }
         if (state.playlist) setPlaylist(state.playlist);
@@ -134,29 +153,32 @@ export default function Room() {
     );
 
     unsubs.push(
-      on('sync-play', (data: { currentTime: number }) => {
+      on('sync-play', (data: { currentTime: number; videoUrl?: string; videoBvid?: string; videoTitle?: string }) => {
         syncingRef.current = true;
         setCurrentTime(data.currentTime);
         setIsPlaying(true);
+        applyVideoSync(data.videoBvid, data.videoUrl, data.videoTitle);
         setSyncToken((t) => t + 1);
         setTimeout(() => { syncingRef.current = false; }, 500);
       })
     );
 
     unsubs.push(
-      on('sync-pause', (data: { currentTime: number }) => {
+      on('sync-pause', (data: { currentTime: number; videoUrl?: string; videoBvid?: string; videoTitle?: string }) => {
         syncingRef.current = true;
         setCurrentTime(data.currentTime);
         setIsPlaying(false);
+        applyVideoSync(data.videoBvid, data.videoUrl, data.videoTitle);
         setSyncToken((t) => t + 1);
         setTimeout(() => { syncingRef.current = false; }, 500);
       })
     );
 
     unsubs.push(
-      on('sync-seek', (data: { currentTime: number }) => {
+      on('sync-seek', (data: { currentTime: number; videoUrl?: string; videoBvid?: string; videoTitle?: string }) => {
         syncingRef.current = true;
         setCurrentTime(data.currentTime);
+        applyVideoSync(data.videoBvid, data.videoUrl, data.videoTitle);
         setSyncToken((t) => t + 1);
         setTimeout(() => { syncingRef.current = false; }, 500);
       })
@@ -188,7 +210,7 @@ export default function Room() {
     return () => {
       unsubs.forEach((u) => u());
     };
-  }, [on, room]);
+  }, [on, room, applyVideoSync]);
 
   // Everyone can control playback
   const handlePlay = useCallback(() => {
@@ -286,15 +308,25 @@ export default function Room() {
             </span>
             <span className="room-host-label">房主: {room.hostName}</span>
           </div>
+          <BilibiliAuth roomId={room.id} isHost={isHost} />
           <VoiceChat socket={socket} roomId={room.id} />
         </div>
 
-        <BilibiliPlayer
-          bvid={room.videoBvid}
-          isPlaying={isPlaying}
-          currentTime={currentTime}
-          syncToken={syncToken}
-        />
+        {bilibiliAuthed ? (
+          <DashPlayer
+            roomId={room.id}
+            isPlaying={isPlaying}
+            currentTime={currentTime}
+            syncToken={syncToken}
+          />
+        ) : (
+          <BilibiliPlayer
+            bvid={room.videoBvid}
+            isPlaying={isPlaying}
+            currentTime={currentTime}
+            syncToken={syncToken}
+          />
+        )}
 
         {/* Playback controls — everyone can use */}
         <div className="playback-controls">

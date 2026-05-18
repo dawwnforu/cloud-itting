@@ -7,6 +7,7 @@ import { setupSocket } from './socket';
 import authRoutes from './routes/auth';
 import roomRoutes from './routes/rooms';
 import historyRoutes from './routes/history';
+import bilibiliRoutes from './routes/bilibili';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { ExpressPeerServer } = require('peer');
@@ -35,25 +36,11 @@ async function main() {
   app.use('/api/auth', authRoutes);
   app.use('/api/rooms', roomRoutes);
   app.use('/api/history', historyRoutes);
+  app.use('/api/bilibili', bilibiliRoutes);
 
   // Health check
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true });
-  });
-
-  // Proxy B站 video info (server-to-server avoids browser CORS)
-  app.get('/api/bilibili/video-info', async (req, res) => {
-    const bvid = req.query.bvid as string;
-    if (!bvid) return res.status(400).json({ error: 'bvid required' });
-    try {
-      const r = await fetch(`https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`, {
-        headers: { 'User-Agent': 'CloudSitting/1.0', 'Referer': 'https://www.bilibili.com' },
-      });
-      const json = await r.json();
-      res.json(json);
-    } catch {
-      res.status(502).json({ error: 'B站 API 请求失败' });
-    }
   });
 
   // PeerJS signaling server (self-hosted, avoids blocked 0.peerjs.com)

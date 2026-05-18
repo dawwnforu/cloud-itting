@@ -1,6 +1,7 @@
 import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import { getPool } from '../db';
+import { bilibiliSessions, playurlCache, prefetchPlayurl } from '../routes/bilibili';
 
 interface PlaylistItem {
   videoUrl: string;
@@ -107,7 +108,12 @@ export function setupSocket(httpServer: HttpServer) {
         state.isPlaying = true;
         state.currentTime = data.currentTime;
       }
-      socket.to(currentRoom).emit('sync-play', data);
+      socket.to(currentRoom).emit('sync-play', {
+	        currentTime: data.currentTime,
+	        videoUrl: state?.videoUrl,
+	        videoBvid: state?.videoBvid,
+	        videoTitle: state?.videoTitle,
+	      });
     });
 
     socket.on('sync-pause', (data: { currentTime: number }) => {
@@ -117,7 +123,12 @@ export function setupSocket(httpServer: HttpServer) {
         state.isPlaying = false;
         state.currentTime = data.currentTime;
       }
-      socket.to(currentRoom).emit('sync-pause', data);
+      socket.to(currentRoom).emit('sync-pause', {
+	        currentTime: data.currentTime,
+	        videoUrl: state?.videoUrl,
+	        videoBvid: state?.videoBvid,
+	        videoTitle: state?.videoTitle,
+	      });
     });
 
     socket.on('sync-seek', (data: { currentTime: number }) => {
@@ -126,7 +137,12 @@ export function setupSocket(httpServer: HttpServer) {
       if (state) {
         state.currentTime = data.currentTime;
       }
-      socket.to(currentRoom).emit('sync-seek', data);
+      socket.to(currentRoom).emit('sync-seek', {
+	        currentTime: data.currentTime,
+	        videoUrl: state?.videoUrl,
+	        videoBvid: state?.videoBvid,
+	        videoTitle: state?.videoTitle,
+	      });
     });
 
     socket.on('sync-video', async (data: { videoUrl: string; videoBvid: string; videoTitle: string; playlistIndex?: number }) => {
@@ -148,6 +164,7 @@ export function setupSocket(httpServer: HttpServer) {
         'UPDATE rooms SET video_url = $1, video_bvid = $2, video_title = $3 WHERE id = $4',
         [data.videoUrl, data.videoBvid, data.videoTitle, currentRoom]
       );
+      prefetchPlayurl(currentRoom, data.videoBvid);
       socket.to(currentRoom).emit('sync-video', data);
     });
 
@@ -172,7 +189,8 @@ export function setupSocket(httpServer: HttpServer) {
 
       // If first item was auto-selected, also sync video
       if (state.playlist.length === 1 && state.videoBvid === data.item.videoBvid) {
-        io.to(currentRoom).emit('sync-video', { videoUrl: state.videoUrl, videoBvid: state.videoBvid, videoTitle: state.videoTitle, playlistIndex: 0 });
+        prefetchPlayurl(currentRoom, data.item.videoBvid);
+	      io.to(currentRoom).emit('sync-video', { videoUrl: state.videoUrl, videoBvid: state.videoBvid, videoTitle: state.videoTitle, playlistIndex: 0 });
       }
     });
 
@@ -208,7 +226,8 @@ export function setupSocket(httpServer: HttpServer) {
       state.currentTime = 0;
 
       await persistPlaylist(currentRoom, state);
-      io.to(currentRoom).emit('sync-video', { videoUrl: item.videoUrl, videoBvid: item.videoBvid, videoTitle: item.videoTitle, playlistIndex: data.index });
+      prefetchPlayurl(currentRoom, item.videoBvid);
+	      io.to(currentRoom).emit('sync-video', { videoUrl: item.videoUrl, videoBvid: item.videoBvid, videoTitle: item.videoTitle, playlistIndex: data.index });
     });
 
     socket.on('play-next', async () => {
@@ -238,7 +257,8 @@ export function setupSocket(httpServer: HttpServer) {
       state.currentTime = 0;
 
       await persistPlaylist(currentRoom, state);
-      io.to(currentRoom).emit('sync-video', { videoUrl: item.videoUrl, videoBvid: item.videoBvid, videoTitle: item.videoTitle, playlistIndex: nextIndex });
+      prefetchPlayurl(currentRoom, item.videoBvid);
+	      io.to(currentRoom).emit('sync-video', { videoUrl: item.videoUrl, videoBvid: item.videoBvid, videoTitle: item.videoTitle, playlistIndex: nextIndex });
     });
 
     socket.on('set-shuffle', async (data: { shuffle: boolean }) => {
@@ -255,7 +275,7 @@ export function setupSocket(httpServer: HttpServer) {
       if (!currentRoom) return;
       const state = roomStates.get(currentRoom);
       if (state) {
-        io.to(currentRoom).emit('room-state', state);
+        socket.emit('room-state', state);
       }
     });
 
