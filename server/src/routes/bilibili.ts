@@ -47,14 +47,21 @@ router.get('/video-info', async (req: Request, res: Response) => {
 // 1. Generate QR code
 router.get('/qrcode/generate', authenticate, async (_req: Request, res: Response) => {
   try {
-    const resp = await fetch(BILIBILI_QR_GENERATE);
+    const resp = await fetch(BILIBILI_QR_GENERATE, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Referer': 'https://www.bilibili.com',
+      },
+    });
     const data = await resp.json();
+    console.log('B站 QR generate response:', JSON.stringify(data).slice(0, 200));
     if (data.code !== 0) {
       return res.status(500).json({ error: data.message || '生成二维码失败' });
     }
     res.json({ qrcode_key: data.data.qrcode_key, url: data.data.url });
   } catch (err: any) {
-    res.status(500).json({ error: 'B站接口请求失败' });
+    console.error('B站 QR generate error:', err.message);
+    res.status(500).json({ error: 'B站接口请求失败: ' + err.message });
   }
 });
 
@@ -66,7 +73,12 @@ router.get('/qrcode/poll', authenticate, async (req: Request, res: Response) => 
   }
 
   try {
-    const resp = await fetch(`${BILIBILI_QR_POLL}?qrcode_key=${qrcode_key}`);
+    const resp = await fetch(`${BILIBILI_QR_POLL}?qrcode_key=${qrcode_key}`, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Referer': 'https://www.bilibili.com',
+        },
+      });
     const data = await resp.json();
 
     if (data.code === 0) {
