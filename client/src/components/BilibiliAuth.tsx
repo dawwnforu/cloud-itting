@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { api } from '../utils/api';
+import QRCode from 'qrcode';
 
 interface Props {
   roomId: string;
@@ -49,7 +49,9 @@ export default function BilibiliAuth({ roomId, isHost }: Props) {
         return;
       }
       qrcodeKeyRef.current = data.qrcode_key;
-      setQrUrl(data.url);
+      // B站返回的 url 是扫码内容，生成真正的二维码图片
+      const qrDataUrl = await QRCode.toDataURL(data.url, { width: 200, margin: 2 });
+      setQrUrl(qrDataUrl);
 
       // Start polling
       pollRef.current = setInterval(async () => {
